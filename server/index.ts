@@ -21,6 +21,10 @@ import {
 
 const apiHandlerFn: any = typeof apiHandler === 'function' ? apiHandler : (apiHandler as { default?: any })?.default;
 
+if (typeof apiHandlerFn !== 'function') {
+  throw new Error('Invalid API module export: expected a default function handler at ../api/index.js');
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
@@ -609,7 +613,7 @@ app.get('/bot/dashboard', ensureDashboardAuth, (req: any, res: any) => {
 
 app.all('/api/*', async (req: any, res: any) => {
   try {
-    await apiHandler(req as never, res as never);
+    await apiHandlerFn(req as never, res as never);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown API error';
     console.error('[server/api]', error);
