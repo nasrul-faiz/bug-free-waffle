@@ -5,12 +5,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import apiHandler from '../api/index.js';
 import {
+  clearDeletedMessageLogs,
   createBotReminder,
   deleteBotReminder,
   getBotMessageBehaviorSettings,
   getDeletedMessageLogs,
   getDeletedMessageMediaPath,
   getBotReminders,
+  removeDeletedMessageRecordsByChatId,
   sendBotDashboardMessage,
   setBotMessageBehaviorSettings,
   startBot,
@@ -147,6 +149,16 @@ app.post('/api/bot/messages', ensureDashboardAuth, botMessageJsonParser, async (
 
 app.get('/api/bot/deleted-messages', ensureDashboardAuth, (_req: any, res: any) => {
   res.status(200).json({ success: true, data: getDeletedMessageLogs() });
+});
+
+app.delete('/api/bot/deleted-messages', ensureDashboardAuth, (_req: any, res: any) => {
+  clearDeletedMessageLogs();
+  return res.status(200).json({ success: true, data: [] });
+});
+
+app.delete('/api/bot/deleted-messages/chat/:chatJid', ensureDashboardAuth, (req: any, res: any) => {
+  const removed = removeDeletedMessageRecordsByChatId(req.params?.chatJid || '');
+  return res.status(200).json({ success: true, removed, data: getDeletedMessageLogs() });
 });
 
 app.get('/api/bot/deleted-messages/media/:fileName', ensureDashboardAuth, (req: any, res: any) => {

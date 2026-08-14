@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import JSZip from 'jszip';
 import sharp from 'sharp';
@@ -7,10 +9,13 @@ import sharp from 'sharp';
 import { unzipTextFromBase64 } from '../src/zip.js';
 import {
   buildTtsAudioMessage,
+  clearDeletedMessageLogs,
   createAuthStatePersistenceController,
   executeCommand,
+  getDeletedMessageLogs,
   normalizeButtonPayload,
   normalizePhoneNumber,
+  removeDeletedMessageRecordsByChatId,
 } from '../src/index.js';
 
 async function createSolidImage(color) {
@@ -71,6 +76,24 @@ test('builds tts audio payload', () => {
   assert.ok(Buffer.isBuffer(payload.audio));
 });
 
+test('removes deleted message logs by chat id and clears all logs', () => {
+  const logPath = path.join(process.cwd(), 'bot', '.bot-deleted-messages.json');
+  const initialLogs = [
+    { id: 'a1', chatJid: '1234567890@g.us', senderJid: '60123456789@s.whatsapp.net', deletedAt: '2024-01-01T00:00:00.000Z', text: 'first' },
+    { id: 'b1', chatJid: '60123456789@s.whatsapp.net', senderJid: '60111111111@s.whatsapp.net', deletedAt: '2024-01-02T00:00:00.000Z', text: 'second' },
+    { id: 'c1', chatJid: '1234567890@g.us', senderJid: '60123456789@s.whatsapp.net', deletedAt: '2024-01-03T00:00:00.000Z', text: 'third' },
+  ];
+
+  fs.writeFileSync(logPath, JSON.stringify(initialLogs, null, 2), 'utf8');
+
+  const removed = removeDeletedMessageRecordsByChatId('1234567890@g.us');
+  assert.equal(removed, 2);
+  assert.deepEqual(getDeletedMessageLogs().map((item) => item.chatJid), ['60123456789@s.whatsapp.net']);
+
+  clearDeletedMessageLogs();
+  assert.deepEqual(getDeletedMessageLogs(), []);
+});
+
 test('normalizes phone numbers for pairing', () => {
   assert.equal(normalizePhoneNumber('+60 12-345 6789'), '60123456789');
 });
@@ -79,12 +102,14 @@ test('normalizes dashboard button payloads before WhatsApp send', () => {
   const normalized = normalizeButtonPayload([
     { label: 'Lihat Info', id: 'info', type: 'quick_reply' },
     { text: 'Call', value: '60123456789', type: 'button_call' },
+    { label: 'Open Site', value: 'https://example.com', type: 'cta_url' },
     { label: 'Invalid', value: '' },
   ]);
 
   assert.deepEqual(normalized, [
     { type: 'quick_reply', label: 'Lihat Info', value: 'info' },
     { type: 'button_call', label: 'Call', value: '60123456789' },
+    { type: 'cta_url', label: 'Open Site', value: 'https://example.com' },
   ]);
 });
 

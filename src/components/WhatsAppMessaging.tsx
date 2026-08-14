@@ -183,7 +183,11 @@ function SendChat() {
       }) : undefined
       const buttons = interactiveButtons
         .filter((button) => button.label.trim() && button.value.trim())
-        .map((button) => ({ label: button.label.trim(), id: button.value.trim() }))
+        .map((button) => ({
+          type: button.type,
+          label: button.label.trim(),
+          value: button.value.trim(),
+        }))
       const response = await fetch(token ? `/api/bot/messages?token=${encodeURIComponent(token)}` : '/api/bot/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { 'x-bot-dashboard-token': token } : {}) },
@@ -288,6 +292,8 @@ function DeletedMessages() {
   const [messages, setMessages] = useState<DeletedMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [actioning, setActioning] = useState<string | null>(null)
+
   const loadMessages = useCallback(async () => {
     try {
       setLoading(true)
@@ -298,10 +304,117 @@ function DeletedMessages() {
       setError(null)
     } catch (requestError) { setError(requestError instanceof Error ? requestError.message : 'Gagal ambil rekod mesej') } finally { setLoading(false) }
   }, [token])
+
+  const deleteChatMessages = useCallback(async (chatJid: string) => {
+    if (!chatJid) return
+    const confirmed = window.confirm('Padam semua rekod mesej yang dipadam untuk chat ini?')
+    if (!confirmed) return
+
+    try {
+      setActioning(chatJid)
+      const response = await fetch(token ? `/api/bot/deleted-messages/chat/${encodeURIComponent(chatJid)}?token=${encodeURIComponent(token)}` : `/api/bot/deleted-messages/chat/${encodeURIComponent(chatJid)}`, {
+        method: 'DELETE',
+        headers: token ? { 'x-bot-dashboard-token': token } : undefined,
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Gagal padam rekod chat')
+      setMessages(payload.data)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Gagal padam rekod chat')
+    } finally {
+      setActioning(null)
+    }
+  }, [token])
+
+  const clearAllMessages = useCallback(async () => {
+    const confirmed = window.confirm('Padam semua rekod mesej yang dipadam?')
+    if (!confirmed) return
+
+    try {
+      setActioning('all')
+      const response = await fetch(token ? `/api/bot/deleted-messages?token=${encodeURIComponent(token)}` : '/api/bot/deleted-messages', {
+        method: 'DELETE',
+        headers: token ? { 'x-bot-dashboard-token': token } : undefined,
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload?.success) throw new Error(payload?.error || 'Gagal padam semua rekod')
+      setMessages(payload.data)
+      setError(null)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Gagal padam semua rekod')
+    } finally {
+      setActioning(null)
+    }
+  }, [token])
+
   useEffect(() => { void loadMessages() }, [loadMessages])
   const mediaUrl = (message: DeletedMessage) => message.mediaPath ? `${token ? `/api/bot/deleted-messages/media/${encodeURIComponent(message.mediaPath)}?token=${encodeURIComponent(token)}` : `/api/bot/deleted-messages/media/${encodeURIComponent(message.mediaPath)}`}` : null
+  const groupedMessages = useMemo(() => {
+    const grouped = new Map<string, DeletedMessage[]>()
+    for (const message of messages) {
+      const key = message.chatJid || 'unknown'
+      const list = grouped.get(key) ?? []
+      list.push(message)
+      grouped.set(key, list)
+    }
+    return Array.from(grouped.entries()).sort(([, a], [, b]) => {
+      const latestA = a.reduce((latest, item) => new Date(item.deletedAt).getTime() > new Date(latest.deletedAt).getTime() ? item : latest, a[0])
+      const latestB = b.reduce((latest, item) => new Date(item.deletedAt).getTime() > new Date(latest.deletedAt).getTime() ? item : latest, b[0])
+      return new Date(latestB.deletedAt).getTime() - new Date(latestA.deletedAt).getTime()
+    })
+  }, [messages])
+
   if (loading) return <div className="rounded-lg border border-border/70 bg-card p-5 text-sm text-muted-foreground">Memuatkan rekod...</div>
   if (error) return <div className="rounded-lg border border-destructive/40 bg-card p-5 text-sm text-destructive">{error}</div>
   if (!messages.length) return <div className="rounded-lg border border-border/70 bg-card p-5 text-sm text-muted-foreground">Belum ada mesej yang dipadam direkodkan.</div>
-  return <div className="space-y-3">{messages.map((message) => { const url = mediaUrl(message); return <article key={`${message.chatJid}-${message.id}`} className="rounded-lg border border-border/70 bg-card p-4 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-medium">{message.senderJid || 'Tidak diketahui'} {message.fromMe ? '(bot)' : ''}</p><p className="text-xs text-muted-foreground">Dipadam {formatDate(message.deletedAt)}</p></div><p className="mt-1 text-xs text-muted-foreground break-all">{message.chatJid}</p>{message.text ? <p className="mt-3 whitespace-pre-wrap text-sm">{message.text}</p> : null}{url && message.mediaType === 'image' ? <img src={url} alt={message.fileName || 'Media dipadam'} className="mt-3 max-h-80 rounded-md border" /> : null}{url && (message.mediaType === 'audio' || message.mediaType === 'video') ? <div className="mt-3">{message.mediaType === 'audio' ? <FileAudio className="mb-1 size-4 text-muted-foreground" /> : <Video className="mb-1 size-4 text-muted-foreground" />}{message.mediaType === 'audio' ? <audio controls src={url} /> : <video controls src={url} className="max-h-80 rounded-md" />}</div> : null}{url && !['image', 'audio', 'video'].includes(message.mediaType || '') ? <a href={url} download={message.fileName || undefined} className="mt-3 inline-flex items-center gap-2 text-sm text-primary hover:underline"><FileText className="size-4" />{message.fileName || 'Muat turun fail arkib'}</a> : null}{message.mediaType && !url ? <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><Image className="size-4" />{message.fileName || `${message.mediaType} telah direkodkan, tetapi fail tidak dapat diarkibkan.`}</p> : null}</article> })}</div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button type="button" variant="destructive" size="sm" onClick={() => void clearAllMessages()} disabled={actioning !== null}>
+          {actioning === 'all' ? 'Memadam...' : 'Padam semua'}
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {groupedMessages.map(([chatJid, chatMessages]) => {
+          const newest = chatMessages.reduce((latest, item) => new Date(item.deletedAt).getTime() > new Date(latest.deletedAt).getTime() ? item : latest, chatMessages[0])
+          return (
+            <article key={chatJid} className="rounded-lg border border-border/70 bg-card p-4 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{chatJid}</p>
+                  <p className="text-xs text-muted-foreground">{chatMessages.length} rekod mesej</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={() => void deleteChatMessages(chatJid)} disabled={actioning !== null}>
+                  {actioning === chatJid ? 'Memadam...' : 'Padam chat'}
+                </Button>
+              </div>
+
+              <div className="mt-3 space-y-3 border-t pt-3">
+                {chatMessages.map((message) => {
+                  const url = mediaUrl(message)
+                  return (
+                    <div key={`${message.chatJid}-${message.id}`} className="rounded-md border border-border/60 bg-muted/20 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">{message.senderJid || 'Tidak diketahui'} {message.fromMe ? '(bot)' : ''}</p>
+                        <p className="text-[11px] text-muted-foreground">Dipadam {formatDate(message.deletedAt)}</p>
+                      </div>
+                      {message.text ? <p className="mt-2 whitespace-pre-wrap text-sm">{message.text}</p> : null}
+                      {url && message.mediaType === 'image' ? <img src={url} alt={message.fileName || 'Media dipadam'} className="mt-3 max-h-80 rounded-md border" /> : null}
+                      {url && (message.mediaType === 'audio' || message.mediaType === 'video') ? <div className="mt-3">{message.mediaType === 'audio' ? <FileAudio className="mb-1 size-4 text-muted-foreground" /> : <Video className="mb-1 size-4 text-muted-foreground" />}{message.mediaType === 'audio' ? <audio controls src={url} /> : <video controls src={url} className="max-h-80 rounded-md" />}</div> : null}
+                      {url && !['image', 'audio', 'video'].includes(message.mediaType || '') ? <a href={url} download={message.fileName || undefined} className="mt-3 inline-flex items-center gap-2 text-sm text-primary hover:underline"><FileText className="size-4" />{message.fileName || 'Muat turun fail arkib'}</a> : null}
+                      {message.mediaType && !url ? <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><Image className="size-4" />{message.fileName || `${message.mediaType} telah direkodkan, tetapi fail tidak dapat diarkibkan.`}</p> : null}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {newest.text ? <p className="mt-3 text-[11px] text-muted-foreground">Preview: {newest.text.slice(0, 80)}{newest.text.length > 80 ? '...' : ''}</p> : null}
+            </article>
+          )
+        })}
+      </div>
+    </div>
+  )
 }

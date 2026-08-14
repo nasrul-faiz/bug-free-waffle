@@ -357,6 +357,39 @@ export function getDeletedMessageLogs() {
   return loadDeletedMessageLogs();
 }
 
+export function removeDeletedMessageRecordsByChatId(chatJid = '') {
+  const target = String(chatJid || '').trim();
+  if (!target) return 0;
+
+  const logs = loadDeletedMessageLogs();
+  const nextLogs = logs.filter((entry) => String(entry?.chatJid || '').trim() !== target);
+  const removed = logs.length - nextLogs.length;
+  if (!removed) return 0;
+
+  deletedMessageLogs = nextLogs.slice(0, MAX_DELETED_MESSAGE_LOGS);
+  saveDeletedMessageLogs();
+  return removed;
+}
+
+export function clearDeletedMessageLogs() {
+  deletedMessageLogs = [];
+  saveDeletedMessageLogs();
+  return 0;
+}
+
+export function deleteDeletedMessageLogById(messageId = '') {
+  const target = String(messageId || '').trim();
+  if (!target) return false;
+
+  const logs = loadDeletedMessageLogs();
+  const nextLogs = logs.filter((entry) => String(entry?.id || '').trim() !== target);
+  if (nextLogs.length === logs.length) return false;
+
+  deletedMessageLogs = nextLogs.slice(0, MAX_DELETED_MESSAGE_LOGS);
+  saveDeletedMessageLogs();
+  return true;
+}
+
 export function getDeletedMessageMediaPath(fileName) {
   const safeName = path.basename(String(fileName || ''));
   return safeName ? path.join(DELETED_MESSAGE_MEDIA_DIR, safeName) : '';
