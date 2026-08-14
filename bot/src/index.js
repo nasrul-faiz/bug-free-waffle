@@ -374,13 +374,28 @@ function resolveDashboardRecipient(recipient, recipientType) {
   return `${number}@s.whatsapp.net`;
 }
 
+export function normalizeButtonPayload(buttons = []) {
+  if (!Array.isArray(buttons)) return [];
+
+  return buttons
+    .map((button) => {
+      const label = String(button?.label ?? button?.text ?? '').trim();
+      const value = String(button?.value ?? button?.id ?? '').trim();
+      const type = String(button?.type || 'quick_reply').trim() || 'quick_reply';
+
+      if (!label || !value) return null;
+
+      return { type, label, value };
+    })
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
 export async function sendBotDashboardMessage({ recipient, recipientType, text, media, buttons } = {}) {
   if (!activeBotSocket) throw new Error('Bot WhatsApp belum connected');
   const jid = resolveDashboardRecipient(recipient, recipientType);
   const messageText = String(text || '').trim();
-  const validButtons = Array.isArray(buttons)
-    ? buttons.filter((button) => String(button?.label || '').trim() && String(button?.id || '').trim()).slice(0, 3)
-    : [];
+  const validButtons = normalizeButtonPayload(buttons);
 
   if (media?.data) {
     const data = String(media.data);
@@ -394,14 +409,14 @@ export async function sendBotDashboardMessage({ recipient, recipientType, text, 
           : { document: content, fileName: media.fileName || 'attachment', mimetype: media.mimetype || 'application/octet-stream', caption: messageText };
     const sent = await activeBotSocket.sendMessage(jid, payload);
     if (validButtons.length && useInteractiveButtons) {
-      await sendCustomButtonsMessage(activeBotSocket, jid, messageText || 'Pilih tindakan:', validButtons.map((button) => ({ id: button.id, text: button.label })));
+      await sendCustomButtonsMessage(activeBotSocket, jid, messageText || 'Pilih tindakan:', validButtons);
     }
     return { messageId: sent?.key?.id || null, jid };
   }
 
   if (!messageText) throw new Error('Teks mesej atau fail diperlukan');
   if (validButtons.length && useInteractiveButtons) {
-    await sendCustomButtonsMessage(activeBotSocket, jid, messageText, validButtons.map((button) => ({ id: button.id, text: button.label })));
+    await sendCustomButtonsMessage(activeBotSocket, jid, messageText, validButtons);
     return { messageId: null, jid };
   }
   const sent = await activeBotSocket.sendMessage(jid, { text: messageText });
@@ -1637,60 +1652,65 @@ function buildInteractiveButtonsFromCustom(buttons) {
   const output = [];
 
   for (const button of buttons) {
-    if (button.type === 'cta_url' || button.type === 'pdf_url') {
+    const buttonType = String(button?.type || 'quick_reply').trim() || 'quick_reply';
+    const label = String(button?.label ?? button?.text ?? '').trim();
+    const value = String(button?.value ?? button?.id ?? '').trim();
+    if (!label || !value) continue;
+
+    if (buttonType === 'cta_url' || buttonType === 'pdf_url') {
       output.push({
         name: 'cta_url',
         buttonParamsJson: JSON.stringify({
-          display_text: button.label,
-          url: button.value,
-          merchant_url: button.value,
+          display_text: label,
+          url: value,
+          merchant_url: value,
         }),
       });
       continue;
     }
 
-    if (button.type === 'cta_copy') {
+    if (buttonType === 'cta_copy') {
       output.push({
         name: 'cta_copy',
         buttonParamsJson: JSON.stringify({
-          display_text: button.label,
-          copy_code: button.value,
+          display_text: label,
+          copy_code: value,
         }),
       });
       continue;
     }
 
-    if (button.type === 'quick_reply' || button.type === 'single_select') {
+    if (buttonType === 'quick_reply' || buttonType === 'single_select') {
       output.push({
         name: 'quick_reply',
         buttonParamsJson: JSON.stringify({
-          display_text: button.label,
-          id: button.value,
+          display_text: label,
+          id: value,
         }),
       });
       continue;
     }
 
-    if (button.type === 'button_call') {
-      const phoneNumber = normalizeButtonCallNumber(button.value);
+    if (buttonType === 'button_call') {
+      const phoneNumber = normalizeButtonCallNumber(value);
       if (!phoneNumber) continue;
       output.push({
         name: 'cta_call',
         buttonParamsJson: JSON.stringify({
-          display_text: button.label,
+          display_text: label,
           id: phoneNumber,
         }),
       });
       continue;
     }
 
-    if (button.type === 'send_whatsapp') {
-      const waLink = normalizeSendWhatsAppLink(button.value);
+    if (buttonType === 'send_whatsapp') {
+      const waLink = normalizeSendWhatsAppLink(value);
       if (!waLink) continue;
       output.push({
         name: 'cta_url',
         buttonParamsJson: JSON.stringify({
-          display_text: button.label,
+          display_text: label,
           url: waLink,
           merchant_url: waLink,
         }),
@@ -1707,24 +1727,29 @@ function buildTemplateButtonsFromCustom(buttons) {
   for (const button of buttons) {
     if (output.length >= 3) break;
 
-    if (button.type === 'quick_reply' || button.type === 'single_select') {
+    const buttonType = String(button?.type || 'quick_reply').trim() || 'quick_reply';
+    const label = String(button?.label ?? button?.text ?? '').trim();
+    const value = String(button?.value ?? button?.id ?? '').trim();
+    if (!label || !value) continue;
+
+    if (buttonType === 'quick_reply' || buttonType === 'single_select') {
       output.push({
         quickReplyButton: {
-          displayText: button.label,
-          id: button.value,
+          displayText: label,
+          id: value,
         },
       });
       continue;
     }
 
-    if (button.type === 'cta_url' || button.type === 'pdf_url' || button.type === 'send_whatsapp') {
-      const resolvedUrl = button.type === 'send_whatsapp'
-        ? normalizeSendWhatsAppLink(button.value)
-        : button.value;
+    if (buttonType === 'cta_url' || buttonType === 'pdf_url' || buttonType === 'send_whatsapp') {
+      const resolvedUrl = buttonType === 'send_whatsapp'
+        ? normalizeSendWhatsAppLink(value)
+        : value;
       if (!resolvedUrl) continue;
       output.push({
         urlButton: {
-          displayText: button.label,
+          displayText: label,
           url: resolvedUrl,
         },
       });
@@ -1748,7 +1773,19 @@ function buildButtonsFallbackText(buttons) {
 }
 
 async function sendCustomButtonsMessage(sock, jid, textBody, buttons = [], footer = 'Routebot') {
-  if (!Array.isArray(buttons) || buttons.length === 0) {
+  const normalizedButtons = Array.isArray(buttons)
+    ? buttons
+        .map((button) => {
+          const label = String(button?.label ?? button?.text ?? '').trim();
+          const value = String(button?.value ?? button?.id ?? '').trim();
+          const type = String(button?.type || 'quick_reply').trim() || 'quick_reply';
+          if (!label || !value) return null;
+          return { type, label, value };
+        })
+        .filter(Boolean)
+    : [];
+
+  if (normalizedButtons.length === 0) {
     if (textBody) {
       await sock.sendMessage(jid, { text: textBody });
     }
@@ -1758,7 +1795,7 @@ async function sendCustomButtonsMessage(sock, jid, textBody, buttons = [], foote
   const intro = textBody || 'Pilih salah satu pilihan di bawah:';
 
   if (useInteractiveButtons) {
-    const interactiveButtons = buildInteractiveButtonsFromCustom(buttons);
+    const interactiveButtons = buildInteractiveButtonsFromCustom(normalizedButtons);
     if (interactiveButtons.length > 0) {
       try {
         await sock.sendMessage(jid, {
@@ -1772,7 +1809,7 @@ async function sendCustomButtonsMessage(sock, jid, textBody, buttons = [], foote
       }
     }
   } else {
-    const templateButtons = buildTemplateButtonsFromCustom(buttons);
+    const templateButtons = buildTemplateButtonsFromCustom(normalizedButtons);
     if (templateButtons.length > 0) {
       try {
         await sock.sendMessage(jid, {
@@ -1788,7 +1825,7 @@ async function sendCustomButtonsMessage(sock, jid, textBody, buttons = [], foote
   }
 
   await sock.sendMessage(jid, {
-    text: `${intro}${buildButtonsFallbackText(buttons)}`,
+    text: `${intro}${buildButtonsFallbackText(normalizedButtons)}`,
   });
 }
 

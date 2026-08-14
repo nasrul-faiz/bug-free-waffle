@@ -9,6 +9,7 @@ import {
   buildTtsAudioMessage,
   createAuthStatePersistenceController,
   executeCommand,
+  normalizeButtonPayload,
   normalizePhoneNumber,
 } from '../src/index.js';
 
@@ -72,6 +73,19 @@ test('builds tts audio payload', () => {
 
 test('normalizes phone numbers for pairing', () => {
   assert.equal(normalizePhoneNumber('+60 12-345 6789'), '60123456789');
+});
+
+test('normalizes dashboard button payloads before WhatsApp send', () => {
+  const normalized = normalizeButtonPayload([
+    { label: 'Lihat Info', id: 'info', type: 'quick_reply' },
+    { text: 'Call', value: '60123456789', type: 'button_call' },
+    { label: 'Invalid', value: '' },
+  ]);
+
+  assert.deepEqual(normalized, [
+    { type: 'quick_reply', label: 'Lihat Info', value: 'info' },
+    { type: 'button_call', label: 'Call', value: '60123456789' },
+  ]);
 });
 
 test('stops persisting creds after socket shutdown begins', async () => {
