@@ -907,28 +907,28 @@ export function DeliveryTableDialog() {
                 {visibleColumns.has("route") && (
                   <th className="px-3 py-3 text-center align-middle">
                     <button type="button" onClick={() => handleSort("route")} className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors">
-                      Route {sortKey === "route" && <ArrowUpDown className="size-2.5" />}
+                      Route
                     </button>
                   </th>
                 )}
                 {visibleColumns.has("code") && (
                   <th className="px-3 py-3 text-center align-middle">
                     <button type="button" onClick={() => handleSort("code")} className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors">
-                      Code {sortKey === "code" && <ArrowUpDown className="size-2.5" />}
+                      Code
                     </button>
                   </th>
                 )}
                 {visibleColumns.has("name") && (
                   <th className="px-3 py-3 text-center align-middle">
                     <button type="button" onClick={() => handleSort("name")} className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors">
-                      Name {sortKey === "name" && <ArrowUpDown className="size-2.5" />}
+                      Name
                     </button>
                   </th>
                 )}
                 {visibleColumns.has("delivery") && (
                   <th className="px-3 py-3 text-center align-middle">
                     <button type="button" onClick={() => handleSort("delivery")} className="inline-flex items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 hover:text-muted-foreground transition-colors">
-                      Delivery {sortKey === "delivery" && <ArrowUpDown className="size-2.5" />}
+                      Delivery
                     </button>
                   </th>
                 )}

@@ -206,6 +206,7 @@ export function createAuthStatePersistenceController(saveCreds) {
 const logger = pino({ level: 'info' });
 const DEFAULT_TIMEZONE = String(process.env.BOT_TIMEZONE || 'Asia/Kuala_Lumpur').trim() || 'Asia/Kuala_Lumpur';
 const BOT_SETTINGS_PATH = path.join(botDir, '.bot-settings.json');
+const BOT_CONTACTS_FILE = path.resolve(process.env.BOT_CONTACTS_FILE || path.join(botDir, '.contacts.json'));
 const DELETED_MESSAGE_LOG_PATH = path.join(botDir, '.bot-deleted-messages.json');
 const DELETED_MESSAGE_MEDIA_DIR = path.join(botDir, '.deleted-message-media');
 const MAX_DELETED_MESSAGE_LOGS = 250;
@@ -1668,6 +1669,119 @@ function normalizeCustomDocumentFileName(fileName = '') {
   return normalized;
 }
 
+function normalizeContactNumber(value = '') {
+  return String(value || '').trim().replace(/\s+/g, '');
+}
+
+function getBotContactsFilePath() {
+  return process.env.BOT_CONTACTS_FILE || BOT_CONTACTS_FILE;
+}
+
+function readBotContacts() {
+  const contactsFilePath = getBotContactsFilePath();
+
+  try {
+    if (!fs.existsSync(contactsFilePath)) {
+      return [];
+    }
+
+    const raw = fs.readFileSync(contactsFilePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .filter((contact) => contact && typeof contact === 'object')
+      .map((contact) => ({
+        id: String(contact.id || contact.phone || randomUUID()).trim(),
+        name: String(contact.name || 'Contact').trim(),
+        phone: normalizeContactNumber(contact.phone || ''),
+        category: String(contact.category || 'Other').trim() || 'Other',
+        note: String(contact.note || '').trim(),
+        avatar: typeof contact.avatar === 'string' ? contact.avatar.trim() : null,
+      }))
+      .filter((contact) => contact.name && contact.phone);
+  } catch (error) {
+    console.warn('Failed to read bot contacts file:', error?.message || error);
+    return [];
+  }
+}
+
+function findBotContactMatches(query = '') {
+  const contacts = readBotContacts();
+  const needle = String(query || '').trim().toLowerCase();
+  if (!needle) return contacts;
+
+  return contacts.filter((contact) => {
+    const haystack = [contact.name, contact.phone, contact.category, contact.note || '']
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(needle);
+  });
+}
+
+function findBotContactById(id = '') {
+  const target = String(id || '').trim();
+  if (!target) return null;
+  return readBotContacts().find((contact) => contact.id === target) || null;
+}
+
+function formatContactReplyText(contact) {
+  const details = [
+    `Name: ${contact.name}`,
+    `Phone: ${contact.phone}`,
+    contact.category ? `Category: ${contact.category}` : null,
+    contact.note ? `Note: ${contact.note}` : null,
+  ].filter(Boolean);
+
+  return `Contact\n${details.join('\n')}`;
+}
+
+function buildContactActionButtons(contact) {
+  const phone = normalizeContactNumber(contact.phone || '');
+  return [
+    { type: 'button_call', label: 'Call', value: phone },
+    { type: 'send_whatsapp', label: 'WhatsApp', value: phone },
+    { type: 'cta_copy', label: 'Copy Number', value: phone },
+  ].filter((button) => button.value);
+}
+
+function buildContactCardReply(contact) {
+  return {
+    type: 'contact-card',
+    text: formatContactReplyText(contact),
+    buttons: buildContactActionButtons(contact),
+  };
+}
+
+function buildContactSearchReply(query = '', matches = []) {
+  const trimmedQuery = String(query || '').trim();
+  const normalizedMatches = Array.isArray(matches) ? matches : [];
+
+  if (!normalizedMatches.length) {
+    const fallbackQuery = trimmedQuery || 'contact';
+    return {
+      type: 'contact-search',
+      text: `Tiada contact yang sepadan dengan “${fallbackQuery}”.`,
+      matches: [],
+    };
+  }
+
+  const enrichedMatches = normalizedMatches.map((contact) => ({
+    ...contact,
+    buttons: buildContactActionButtons(contact),
+  }));
+
+  if (enrichedMatches.length === 1) {
+    return buildContactCardReply(enrichedMatches[0]);
+  }
+
+  return {
+    type: 'contact-search',
+    text: `Saya jumpa ${enrichedMatches.length} contact untuk “${trimmedQuery || 'contact'}”.`,
+    matches: enrichedMatches,
+  };
+}
+
 function normalizeButtonCallNumber(value = '') {
   return String(value || '').replace(/[^\d+]/g, '');
 }
@@ -2500,6 +2614,14 @@ export async function executeCommand(text, runtime, message = null) {
     }
   }
 
+  const contactIdMatch = typeof text === 'string' && text.trim().startsWith('contact:')
+    ? text.trim().slice('contact:'.length).trim()
+    : null;
+  if (contactIdMatch) {
+    const selectedContact = findBotContactById(contactIdMatch);
+    if (selectedContact) return buildContactCardReply(selectedContact);
+  }
+
   if (!normalizedRaw.startsWith(commandPrefix)) return null;
 
   const withoutPrefix = normalizedRaw.slice(commandPrefix.length).trim();
@@ -2557,6 +2679,13 @@ Contoh: ${commandPrefix}wlink 60177501997`;
       text: `Link WhatsApp:\n${link}`,
       copyText: link,
     };
+  }
+
+  if (command === 'contact' || command === 'c' || (command.startsWith('c') && command !== 'csv')) {
+    const baseQuery = command === 'contact' ? (arg || '') : command.slice(1) || arg || '';
+    const lookupQuery = (baseQuery || arg || command).trim();
+    const matches = findBotContactMatches(lookupQuery || command);
+    return buildContactSearchReply(lookupQuery || command, matches);
   }
 
   if (command === 'routes') {
@@ -3339,6 +3468,29 @@ export async function startBot(overrides = {}) {
 
         if (reply.type === 'custom-command') {
           await sendCustomCommandResponse(sock, remoteJid, reply);
+          continue;
+        }
+
+        if (reply.type === 'contact-search') {
+          const buttons = Array.isArray(reply.matches) && reply.matches.length > 0
+            ? reply.matches.map((contact) => ({
+                type: 'quick_reply',
+                label: contact.name,
+                value: `contact:${contact.id}`,
+              }))
+            : [];
+
+          if (buttons.length > 0) {
+            await sendCustomButtonsMessage(sock, remoteJid, reply.text, buttons, 'Contact');
+            continue;
+          }
+
+          await sock.sendMessage(remoteJid, { text: reply.text || 'Tiada contact.' });
+          continue;
+        }
+
+        if (reply.type === 'contact-card') {
+          await sendCustomButtonsMessage(sock, remoteJid, reply.text, reply.buttons, 'Contact');
           continue;
         }
 

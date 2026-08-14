@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { CalendarClock, ContactRound, FileAudio, FileText, Image, LoaderCircle, MessageCircleMore, Plus, Send, Trash2, Upload, Video } from "lucide-react"
+import { CalendarClock, ContactRound, FileAudio, FileText, Image, LoaderCircle, MessageCircleMore, Pencil, Plus, Search, Send, Smartphone, Trash2, Upload, UserRound, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent as AlertDialogContentRoot, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 
 interface WhatsAppMessagingProps {
   page: string
@@ -72,7 +74,7 @@ export function WhatsAppMessaging({ page }: WhatsAppMessagingProps) {
         <p className="mt-2 text-sm text-muted-foreground">{config.description}</p>
       </div>
 
-      {page === "bot-send-chat" ? <SendChat /> : page === "bot-delete-message" ? <DeletedMessages /> : (
+      {page === "bot-send-chat" ? <SendChat /> : page === "bot-delete-message" ? <DeletedMessages /> : page === "bot-contact" ? <ContactManager /> : (
         <div className="rounded-lg border border-border/70 bg-card/90 p-4 md:p-5 shadow-sm">
           <p className="text-sm text-muted-foreground">Fungsi ini akan tersedia pada halaman seterusnya.</p>
         </div>
@@ -285,6 +287,341 @@ function SendChat() {
     </section>
     <aside className="rounded-lg border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground shadow-sm"><p className="font-medium text-foreground">Sasaran penghantaran</p><p className="mt-2">Personal menerima nombor dengan format antarabangsa, contohnya 60123456789.</p><p className="mt-3">Group memerlukan Group ID WhatsApp penuh yang berakhir dengan @g.us.</p><p className="mt-3">Untuk media, butang dihantar sebagai mesej interaktif selepas fail.</p></aside>
   </div>
+}
+
+type ContactCategory = "Customer" | "Supplier" | "Support" | "Other"
+
+type ContactRecord = {
+  id: string
+  name: string
+  phone: string
+  category: ContactCategory
+  note?: string
+  avatar?: string | null
+}
+
+const CONTACT_STORAGE_KEY = "whatsapp_contact_list_v1"
+
+const defaultContacts: ContactRecord[] = [
+  { id: "c1", name: "Aisyah Rahman", phone: "+60123456789", category: "Customer", note: "Follow up on order status" },
+  { id: "c2", name: "Syarikat Maju", phone: "+60182345678", category: "Supplier", note: "Main supplier for packaging" },
+  { id: "c3", name: "Support Desk", phone: "+60388888888", category: "Support", note: "For technical issues" },
+]
+
+function getInitials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'C'
+}
+
+function ContactManager() {
+  const [contacts, setContacts] = useState<ContactRecord[]>(() => {
+    if (typeof window === "undefined") return defaultContacts
+    try {
+      const saved = window.localStorage.getItem(CONTACT_STORAGE_KEY)
+      if (!saved) return defaultContacts
+      const parsed = JSON.parse(saved)
+      if (!Array.isArray(parsed) || parsed.length === 0) return defaultContacts
+      return parsed as ContactRecord[]
+    } catch {
+      return defaultContacts
+    }
+  })
+  const [search, setSearch] = useState("")
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<ContactRecord | null>(null)
+  const [form, setForm] = useState({ name: "", phone: "", category: "Other" as ContactCategory, note: "", avatar: "" as string | null })
+  const [error, setError] = useState<string | null>(null)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    window.localStorage.setItem(CONTACT_STORAGE_KEY, JSON.stringify(contacts))
+  }, [contacts])
+
+  const filteredContacts = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return contacts
+    return contacts.filter((contact) => {
+      const haystack = `${contact.name} ${contact.phone} ${contact.category} ${contact.note ?? ""}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [contacts, search])
+
+  const openCreateDialog = () => {
+    setEditingId(null)
+    setForm({ name: "", phone: "", category: "Other", note: "", avatar: null })
+    setError(null)
+    setIsDialogOpen(true)
+  }
+
+  const openEditDialog = (contact: ContactRecord) => {
+    setEditingId(contact.id)
+    setForm({
+      name: contact.name,
+      phone: contact.phone,
+      category: contact.category,
+      note: contact.note ?? "",
+      avatar: contact.avatar ?? null,
+    })
+    setError(null)
+    setIsDialogOpen(true)
+  }
+
+  const handleAvatarFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Avatar image must be smaller than 2MB.")
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setForm((previous) => ({ ...previous, avatar: typeof reader.result === "string" ? reader.result : null }))
+      setError(null)
+    }
+    reader.readAsDataURL(file)
+
+    if (avatarInputRef.current) avatarInputRef.current.value = ""
+  }
+
+  const handleSaveContact = () => {
+    const normalizedName = form.name.trim()
+    const normalizedPhone = form.phone.trim()
+
+    if (!normalizedName) {
+      setError("Please enter a contact name.")
+      return
+    }
+
+    if (!normalizedPhone) {
+      setError("Please enter a phone number.")
+      return
+    }
+
+    const duplicate = contacts.some((contact) => {
+      if (editingId && contact.id === editingId) return false
+      return contact.phone.replace(/\s+/g, "").toLowerCase() === normalizedPhone.replace(/\s+/g, "").toLowerCase()
+    })
+
+    if (duplicate) {
+      setError("This phone number already exists in your contact list.")
+      return
+    }
+
+    if (editingId) {
+      setContacts((previous) => previous.map((contact) => contact.id === editingId ? {
+        ...contact,
+        name: normalizedName,
+        phone: normalizedPhone,
+        category: form.category,
+        note: form.note.trim(),
+        avatar: form.avatar ?? null,
+      } : contact))
+    } else {
+      const newContact: ContactRecord = {
+        id: crypto.randomUUID?.() ?? `contact-${Date.now()}`,
+        name: normalizedName,
+        phone: normalizedPhone,
+        category: form.category,
+        note: form.note.trim(),
+        avatar: form.avatar ?? null,
+      }
+      setContacts((previous) => [newContact, ...previous])
+    }
+
+    setIsDialogOpen(false)
+    setEditingId(null)
+    setForm({ name: "", phone: "", category: "Other", note: "", avatar: null })
+    setError(null)
+  }
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return
+    setContacts((previous) => previous.filter((contact) => contact.id !== pendingDelete.id))
+    setPendingDelete(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <ContactRound className="size-4 text-emerald-500" />
+            <span>Saved contacts</span>
+          </div>
+          <Button type="button" size="sm" onClick={openCreateDialog} className="gap-2">
+            <Plus className="size-4" /> Add Contact
+          </Button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5">
+          <Search className="size-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search name, phone or category"
+            className="w-full border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {filteredContacts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card/80 p-8 text-center shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <UserRound className="size-5 text-muted-foreground" />
+          </div>
+          <h3 className="mt-4 text-base font-semibold">No contacts found</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Try another keyword or add a new contact.</p>
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filteredContacts.map((contact) => (
+            <article key={contact.id} className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm transition-colors hover:border-primary/50">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  {contact.avatar ? (
+                    <img src={contact.avatar} alt={contact.name} className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-background shadow-sm" />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 text-sm font-bold text-white shadow-sm">
+                      {getInitials(contact.name)}
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{contact.name}</p>
+                    <span className="mt-1 inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      {contact.category}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(contact)} aria-label={`Edit ${contact.name}`}>
+                    <Pencil className="size-3.5" />
+                  </Button>
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setPendingDelete(contact)} aria-label={`Delete ${contact.name}`}>
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2 border-t border-border/60 pt-3 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Smartphone className="size-3.5" />
+                  <span className="truncate">{contact.phone}</span>
+                </div>
+                {contact.note ? (
+                  <p className="text-xs leading-5 text-muted-foreground">{contact.note}</p>
+                ) : (
+                  <p className="text-xs italic text-muted-foreground/80">No note added</p>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open)
+        if (!open) {
+          setEditingId(null)
+          setForm({ name: "", phone: "", category: "Other", note: "", avatar: null })
+          setError(null)
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit contact" : "Add contact"}</DialogTitle>
+            <DialogDescription>
+              {editingId ? "Update the selected contact information." : "Add a new WhatsApp contact to your list."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <Label>Avatar</Label>
+              <div className="flex items-center gap-3">
+                <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-border bg-muted">
+                  {form.avatar ? (
+                    <img src={form.avatar} alt="Contact preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-sm font-bold text-muted-foreground">{getInitials(form.name || "Contact")}</span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => avatarInputRef.current?.click()}>Upload</Button>
+                  {form.avatar ? (
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setForm((previous) => ({ ...previous, avatar: null }))}>Remove</Button>
+                  ) : null}
+                </div>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-name">Name</Label>
+              <Input id="contact-name" value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} placeholder="e.g. Ali Ahmad" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-phone">Phone number</Label>
+              <Input id="contact-phone" value={form.phone} onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))} placeholder="e.g. +60123456789" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-category">Category</Label>
+              <Select value={form.category} onValueChange={(value) => setForm((previous) => ({ ...previous, category: value as ContactCategory }))}>
+                <SelectTrigger id="contact-category">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Customer">Customer</SelectItem>
+                  <SelectItem value="Supplier">Supplier</SelectItem>
+                  <SelectItem value="Support">Support</SelectItem>
+                  <SelectItem value="Other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-note">Note</Label>
+              <Textarea id="contact-note" value={form.note} onChange={(event) => setForm((previous) => ({ ...previous, note: event.target.value }))} placeholder="Optional note" className="min-h-24" />
+            </div>
+
+            {error ? (
+              <p className="text-sm text-destructive">{error}</p>
+            ) : null}
+          </div>
+
+          <div className="mt-5 flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={handleSaveContact}>{editingId ? "Save changes" : "Add contact"}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) setPendingDelete(null) }}>
+        <AlertDialogContentRoot>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete contact?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete ? `This action will permanently remove ${pendingDelete.name} from your contact list.` : "This action cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmDelete}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContentRoot>
+      </AlertDialog>
+    </div>
+  )
 }
 
 function DeletedMessages() {

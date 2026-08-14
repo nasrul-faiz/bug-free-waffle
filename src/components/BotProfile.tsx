@@ -104,6 +104,9 @@ export function BotProfile() {
     .slice(0, 2)
     .map((word) => word.charAt(0).toUpperCase())
     .join('') || 'WA'
+  const avatarTone = isOnline
+    ? 'from-emerald-500 via-emerald-500 to-emerald-700 dark:from-emerald-400 dark:via-emerald-500 dark:to-emerald-700'
+    : 'from-slate-300 via-slate-400 to-slate-500 dark:from-slate-700 dark:via-slate-800 dark:to-slate-900'
 
   return (
     <div className="flex flex-col flex-1 min-h-0 gap-3 p-3 md:p-4 lg:p-5">
@@ -128,8 +131,9 @@ export function BotProfile() {
         <article className="rounded-2xl border border-border/70 bg-card/90 p-4 shadow-sm">
           <div className="rounded-xl border border-border/60 bg-gradient-to-br from-primary/10 via-background to-background px-4 py-5 md:px-5 md:py-6">
             <div className="flex items-center gap-4">
-              <div className="relative h-16 w-16 shrink-0 rounded-2xl border border-border bg-background flex items-center justify-center">
-                <span className="text-lg font-bold text-foreground">{initials}</span>
+              <div className={`relative h-16 w-16 shrink-0 rounded-full border border-border/60 bg-gradient-to-br ${avatarTone} shadow-sm ring-4 ring-background flex items-center justify-center overflow-hidden`}>
+                <div className="absolute inset-0 bg-black/10" />
+                <span className="relative text-lg font-bold text-white drop-shadow-sm">{initials}</span>
               </div>
               <div className="min-w-0">
                 <p className="text-lg md:text-xl font-bold leading-tight truncate">{displayName}</p>

@@ -201,6 +201,32 @@ test('custom command responds when trigger is saved without prefix', async () =>
   assert.equal(reply.message, 'Promo tanpa prefix');
 });
 
+test('contact command resolves matching people and returns contact selection buttons', async () => {
+  const tempContactsPath = path.join(process.cwd(), 'bot', '.test-contacts.json');
+  const contacts = [
+    { id: 'c1', name: 'Aisyah Rahman', phone: '+60123456789', category: 'Customer', note: 'Sales' },
+    { id: 'c2', name: 'Aisyah Mazlan', phone: '+60129876543', category: 'Supplier', note: 'Packaging' },
+  ];
+  fs.writeFileSync(tempContactsPath, JSON.stringify(contacts, null, 2), 'utf8');
+
+  const previousContactsPath = process.env.BOT_CONTACTS_FILE;
+  process.env.BOT_CONTACTS_FILE = tempContactsPath;
+
+  try {
+    const reply = await executeCommand('/caisyah', { commandPrefix: '.' });
+
+    assert.equal(reply.type, 'contact-search');
+    assert.equal(reply.matches.length, 2);
+    assert.equal(reply.matches[0].name, 'Aisyah Rahman');
+    assert.equal(reply.matches[1].name, 'Aisyah Mazlan');
+    assert.equal(reply.matches[0].buttons[0].type, 'button_call');
+  } finally {
+    if (previousContactsPath === undefined) delete process.env.BOT_CONTACTS_FILE;
+    else process.env.BOT_CONTACTS_FILE = previousContactsPath;
+    fs.rmSync(tempContactsPath, { force: true });
+  }
+});
+
 test('wlink command returns a WhatsApp link with copy payload', async () => {
   const reply = await executeCommand('.wlink 60177501997', {
     commandPrefix: '.',
