@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, ContactRound, FileAudio, FileText, Image, LoaderCircle, MessageCircleMore, Pencil, Plus, Search, Send, Smartphone, Trash2, Upload, UserRound, Video } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -317,14 +317,20 @@ function getInitials(name: string) {
     .join('') || 'C'
 }
 
-function ContactManager() {
+type ContactManagerProps = {
+  initialContacts?: ContactRecord[]
+}
+
+export function ContactManager({ initialContacts }: ContactManagerProps = {}) {
   const [contacts, setContacts] = useState<ContactRecord[]>(() => {
+    if (initialContacts !== undefined) return initialContacts
+
     if (typeof window === "undefined") return defaultContacts
     try {
       const saved = window.localStorage.getItem(CONTACT_STORAGE_KEY)
-      if (!saved) return defaultContacts
+      if (saved === null) return defaultContacts
       const parsed = JSON.parse(saved)
-      if (!Array.isArray(parsed) || parsed.length === 0) return defaultContacts
+      if (!Array.isArray(parsed)) return defaultContacts
       return parsed as ContactRecord[]
     } catch {
       return defaultContacts
@@ -478,6 +484,15 @@ function ContactManager() {
           </div>
           <h3 className="mt-4 text-base font-semibold">No contacts found</h3>
           <p className="mt-1 text-sm text-muted-foreground">Try another keyword or add a new contact.</p>
+          <Button
+            type="button"
+            size="sm"
+            onClick={openCreateDialog}
+            className="mt-4 gap-2"
+            data-testid="empty-add-contact-button"
+          >
+            <Plus className="size-4" /> Add Contact
+          </Button>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
