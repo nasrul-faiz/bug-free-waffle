@@ -2717,11 +2717,17 @@ Contoh: ${commandPrefix}wlink 60177501997`;
     };
   }
 
-  if (command === 'contact' || command === 'c' || (command.startsWith('c') && command !== 'csv')) {
+  const isExplicitContactCommand = command === 'contact' || command === 'c';
+  const isShortContactLookup = command.length > 1 && command.startsWith('c') && command !== 'csv';
+
+  if (isExplicitContactCommand || isShortContactLookup) {
     const baseQuery = command === 'contact' ? (arg || '') : command.slice(1) || arg || '';
     const lookupQuery = (baseQuery || arg || command).trim();
     const matches = findBotContactMatches(lookupQuery || command);
-    return buildContactSearchReply(lookupQuery || command, matches);
+
+    if (!(isShortContactLookup && matches.length === 0)) {
+      return buildContactSearchReply(lookupQuery || command, matches);
+    }
   }
 
   if (command === 'routes') {

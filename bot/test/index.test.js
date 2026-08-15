@@ -130,6 +130,20 @@ test('accepts slash-prefixed numeric location commands when the configured prefi
   assert.equal(reply.point.code, '33');
 });
 
+test('does not treat arbitrary c-prefixed words as contact lookup commands', async () => {
+  const reply = await executeCommand('.cari', {
+    commandPrefix: '.',
+    http: {
+      async get() {
+        return { data: { success: true, data: [] } };
+      },
+    },
+  });
+
+  assert.equal(reply.type, 'command-not-found');
+  assert.equal(reply.commandPrefix, '.');
+});
+
 test('strictly follows the configured command prefix for regular commands', async () => {
   const reply = await executeCommand('/ping', {
     commandPrefix: '/',
