@@ -2610,8 +2610,15 @@ export async function executeCommand(text, runtime, message = null) {
     ? runtime.downloadQuotedMediaBuffer
     : downloadQuotedMediaBuffer;
 
-  if (normalizedRaw.startsWith(commandPrefix) && /^\d+$/.test(normalizedRaw.slice(commandPrefix.length).trim())) {
-    const locationCode = normalizedRaw.slice(commandPrefix.length).trim();
+  const locationCodeFromPrefix = normalizedRaw.startsWith(commandPrefix)
+    ? normalizedRaw.slice(commandPrefix.length).trim()
+    : '';
+  const locationCodeFromSlashAlias = commandPrefix === '.' && normalizedRaw.startsWith('/')
+    ? normalizedRaw.slice(1).trim()
+    : '';
+  const locationCode = locationCodeFromPrefix || locationCodeFromSlashAlias;
+
+  if (locationCode && /^\d+$/.test(locationCode)) {
     try {
       const routes = await fetchRoutes(http);
       const foundLocation = findLocationByCode(routes, locationCode);

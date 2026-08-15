@@ -99,6 +99,37 @@ test('strictly follows the configured command prefix for numeric location comman
   assert.equal(otherPrefixReply, null);
 });
 
+test('accepts slash-prefixed numeric location commands when the configured prefix is dot', async () => {
+  const reply = await executeCommand('/33', {
+    commandPrefix: '.',
+    http: {
+      async get() {
+        return {
+          data: {
+            success: true,
+            data: [
+              {
+                code: 'R1',
+                name: 'Route 1',
+                shift: 'AM',
+                deliveryPoints: [
+                  {
+                    code: '33',
+                    name: 'Stop 33',
+                  },
+                ],
+              },
+            ],
+          },
+        };
+      },
+    },
+  });
+
+  assert.equal(reply.type, 'location');
+  assert.equal(reply.point.code, '33');
+});
+
 test('strictly follows the configured command prefix for regular commands', async () => {
   const reply = await executeCommand('/ping', {
     commandPrefix: '/',
