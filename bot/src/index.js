@@ -1677,7 +1677,45 @@ function getBotContactsFilePath() {
   return process.env.BOT_CONTACTS_FILE || BOT_CONTACTS_FILE;
 }
 
-function readBotContacts() {
+function normalizeBotContact(contact) {
+  if (!contact || typeof contact !== 'object') return null;
+
+  const name = String(contact.name || 'Contact').trim();
+  const phone = normalizeContactNumber(contact.phone || '');
+  if (!name || !phone) return null;
+
+  return {
+    id: String(contact.id || contact.phone || randomUUID()).trim(),
+    name,
+    phone,
+    category: String(contact.category || 'Other').trim() || 'Other',
+    note: String(contact.note || '').trim(),
+    avatar: typeof contact.avatar === 'string' ? contact.avatar.trim() : null,
+  };
+}
+
+export function saveBotContacts(contacts = []) {
+  const contactsFilePath = getBotContactsFilePath();
+  const normalizedContacts = Array.isArray(contacts)
+    ? contacts
+        .map((contact) => normalizeBotContact(contact))
+        .filter(Boolean)
+    : [];
+
+  try {
+    const dir = path.dirname(contactsFilePath);
+    if (dir && !fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(contactsFilePath, `${JSON.stringify(normalizedContacts, null, 2)}\n`, 'utf8');
+    return normalizedContacts;
+  } catch (error) {
+    console.warn('Failed to write bot contacts file:', error?.message || error);
+    return [];
+  }
+}
+
+export function readBotContacts() {
   const contactsFilePath = getBotContactsFilePath();
 
   try {
@@ -1690,16 +1728,8 @@ function readBotContacts() {
     if (!Array.isArray(parsed)) return [];
 
     return parsed
-      .filter((contact) => contact && typeof contact === 'object')
-      .map((contact) => ({
-        id: String(contact.id || contact.phone || randomUUID()).trim(),
-        name: String(contact.name || 'Contact').trim(),
-        phone: normalizeContactNumber(contact.phone || ''),
-        category: String(contact.category || 'Other').trim() || 'Other',
-        note: String(contact.note || '').trim(),
-        avatar: typeof contact.avatar === 'string' ? contact.avatar.trim() : null,
-      }))
-      .filter((contact) => contact.name && contact.phone);
+      .map((contact) => normalizeBotContact(contact))
+      .filter(Boolean);
   } catch (error) {
     console.warn('Failed to read bot contacts file:', error?.message || error);
     return [];

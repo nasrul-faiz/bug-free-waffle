@@ -301,6 +301,7 @@ type ContactRecord = {
 }
 
 const CONTACT_STORAGE_KEY = "whatsapp_contact_list_v1"
+const CONTACT_SYNC_ENDPOINT = "/api/bot/contacts"
 
 const defaultContacts: ContactRecord[] = [
   { id: "c1", name: "Aisyah Rahman", phone: "+60123456789", category: "Customer", note: "Follow up on order status" },
@@ -342,11 +343,50 @@ export function ContactManager({ initialContacts }: ContactManagerProps = {}) {
   const [pendingDelete, setPendingDelete] = useState<ContactRecord | null>(null)
   const [form, setForm] = useState({ name: "", phone: "", category: "Other" as ContactCategory, note: "", avatar: "" as string | null })
   const [error, setError] = useState<string | null>(null)
+  const [hasLoadedRemote, setHasLoadedRemote] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    window.localStorage.setItem(CONTACT_STORAGE_KEY, JSON.stringify(contacts))
-  }, [contacts])
+    let ignore = false
+
+    async function loadRemoteContacts() {
+      try {
+        const response = await fetch(CONTACT_SYNC_ENDPOINT)
+        if (!response.ok) return
+        const payload = await response.json()
+        const nextContacts = Array.isArray(payload?.data) ? payload.data as ContactRecord[] : null
+        if (!ignore && nextContacts && nextContacts.length > 0) {
+          setContacts(nextContacts)
+          window.localStorage.setItem(CONTACT_STORAGE_KEY, JSON.stringify(nextContacts))
+        }
+      } catch {
+        // Ignore remote sync failures and keep local data.
+      } finally {
+        if (!ignore) setHasLoadedRemote(true)
+      }
+    }
+
+    void loadRemoteContacts()
+    return () => { ignore = true }
+  }, [])
+
+  useEffect(() => {
+    if (!hasLoadedRemote || typeof window === "undefined") return
+
+    try {
+      window.localStorage.setItem(CONTACT_STORAGE_KEY, JSON.stringify(contacts))
+    } catch {
+      // localStorage may be unavailable in some environments.
+    }
+
+    void fetch(CONTACT_SYNC_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(contacts),
+    }).catch(() => {
+      // Ignore sync failures; the bot will continue reading the last stored copy.
+    })
+  }, [contacts, hasLoadedRemote])
 
   const filteredContacts = useMemo(() => {
     const query = search.trim().toLowerCase()

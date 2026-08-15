@@ -2,9 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import JSZip from 'jszip';
 import sharp from 'sharp';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const botRootDir = path.resolve(__dirname, '..');
 
 import { unzipTextFromBase64 } from '../src/zip.js';
 import {
@@ -16,6 +21,7 @@ import {
   normalizeButtonPayload,
   normalizePhoneNumber,
   removeDeletedMessageRecordsByChatId,
+  saveBotContacts,
 } from '../src/index.js';
 
 async function createSolidImage(color) {
@@ -77,7 +83,7 @@ test('builds tts audio payload', () => {
 });
 
 test('removes deleted message logs by chat id and clears all logs', () => {
-  const logPath = path.join(process.cwd(), 'bot', '.bot-deleted-messages.json');
+  const logPath = path.join(botRootDir, '.bot-deleted-messages.json');
   const initialLogs = [
     { id: 'a1', chatJid: '1234567890@g.us', senderJid: '60123456789@s.whatsapp.net', deletedAt: '2024-01-01T00:00:00.000Z', text: 'first' },
     { id: 'b1', chatJid: '60123456789@s.whatsapp.net', senderJid: '60111111111@s.whatsapp.net', deletedAt: '2024-01-02T00:00:00.000Z', text: 'second' },
@@ -202,7 +208,7 @@ test('custom command responds when trigger is saved without prefix', async () =>
 });
 
 test('contact command resolves matching people and returns contact selection buttons', async () => {
-  const tempContactsPath = path.join(process.cwd(), 'bot', '.test-contacts.json');
+  const tempContactsPath = path.join(botRootDir, '.test-contacts.json');
   const contacts = [
     { id: 'c1', name: 'Aisyah Rahman', phone: '+60123456789', category: 'Customer', note: 'Sales' },
     { id: 'c2', name: 'Aisyah Mazlan', phone: '+60129876543', category: 'Supplier', note: 'Packaging' },
@@ -220,6 +226,27 @@ test('contact command resolves matching people and returns contact selection but
     assert.equal(reply.matches[0].name, 'Aisyah Rahman');
     assert.equal(reply.matches[1].name, 'Aisyah Mazlan');
     assert.equal(reply.matches[0].buttons[0].type, 'button_call');
+  } finally {
+    if (previousContactsPath === undefined) delete process.env.BOT_CONTACTS_FILE;
+    else process.env.BOT_CONTACTS_FILE = previousContactsPath;
+    fs.rmSync(tempContactsPath, { force: true });
+  }
+});
+
+test('saved bot contacts can be synced to disk and found by name lookup', async () => {
+  const tempContactsPath = path.join(botRootDir, '.test-contacts-acun.json');
+  const previousContactsPath = process.env.BOT_CONTACTS_FILE;
+  process.env.BOT_CONTACTS_FILE = tempContactsPath;
+
+  try {
+    saveBotContacts([
+      { id: 'acun-1', name: 'Acun', phone: '+60123456789', category: 'Customer', note: 'Pelanggan utama' },
+    ]);
+
+    const reply = await executeCommand('.cacun', { commandPrefix: '.' });
+    assert.equal(reply.type, 'contact-card');
+    assert.match(reply.text, /Name: Acun/i);
+    assert.match(reply.text, /Phone: \+60123456789/i);
   } finally {
     if (previousContactsPath === undefined) delete process.env.BOT_CONTACTS_FILE;
     else process.env.BOT_CONTACTS_FILE = previousContactsPath;

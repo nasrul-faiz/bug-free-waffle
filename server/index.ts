@@ -12,7 +12,9 @@ import {
   getDeletedMessageLogs,
   getDeletedMessageMediaPath,
   getBotReminders,
+  readBotContacts,
   removeDeletedMessageRecordsByChatId,
+  saveBotContacts,
   sendBotDashboardMessage,
   setBotMessageBehaviorSettings,
   startBot,
@@ -148,6 +150,22 @@ app.post('/api/bot/messages', ensureDashboardAuth, botMessageJsonParser, async (
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Gagal hantar mesej';
     return res.status(400).json({ success: false, error: message });
+  }
+});
+
+app.get('/api/bot/contacts', ensureDashboardAuth, (_req: any, res: any) => {
+  res.status(200).json({ success: true, data: readBotContacts() });
+});
+
+app.post('/api/bot/contacts', ensureDashboardAuth, (req: any, res: any) => {
+  try {
+    const raw = req?.body && typeof req.body === 'object' ? req.body : {};
+    const nextContacts = Array.isArray(raw) ? raw : Array.isArray(raw.contacts) ? raw.contacts : [];
+    const saved = saveBotContacts(nextContacts);
+    return res.status(200).json({ success: true, data: saved });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to save bot contacts';
+    return res.status(500).json({ success: false, error: message });
   }
 });
 
