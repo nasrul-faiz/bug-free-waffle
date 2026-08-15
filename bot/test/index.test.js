@@ -13,6 +13,7 @@ const botRootDir = path.resolve(__dirname, '..');
 
 import { unzipTextFromBase64 } from '../src/zip.js';
 import {
+  buildInteractiveButtonsFromCustom,
   buildTtsAudioMessage,
   clearDeletedMessageLogs,
   createAuthStatePersistenceController,
@@ -117,6 +118,17 @@ test('normalizes dashboard button payloads before WhatsApp send', () => {
     { type: 'button_call', label: 'Call', value: '60123456789' },
     { type: 'cta_url', label: 'Open Site', value: 'https://example.com' },
   ]);
+});
+
+test('cta call buttons send the phone_number field WhatsApp expects', () => {
+  const buttons = buildInteractiveButtonsFromCustom([
+    { type: 'button_call', label: 'Call', value: '+60 12-345 6789' },
+  ]);
+
+  assert.equal(buttons.length, 1);
+  assert.equal(buttons[0].name, 'cta_call');
+  assert.match(buttons[0].buttonParamsJson, /"phone_number":"\+60123456789"/);
+  assert.doesNotMatch(buttons[0].buttonParamsJson, /"id"/);
 });
 
 test('stops persisting creds after socket shutdown begins', async () => {

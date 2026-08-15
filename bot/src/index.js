@@ -1825,7 +1825,7 @@ function normalizeSendWhatsAppLink(value = '') {
   return digits ? `https://wa.me/${digits}` : '';
 }
 
-function buildInteractiveButtonsFromCustom(buttons) {
+export function buildInteractiveButtonsFromCustom(buttons) {
   const output = [];
 
   for (const button of buttons) {
@@ -1875,7 +1875,7 @@ function buildInteractiveButtonsFromCustom(buttons) {
         name: 'cta_call',
         buttonParamsJson: JSON.stringify({
           display_text: label,
-          id: phoneNumber,
+          phone_number: phoneNumber,
         }),
       });
       continue;
