@@ -36,9 +36,9 @@ async function createSolidImage(color) {
   }).jpeg().toBuffer();
 }
 
-test('accepts dot-prefixed numeric location commands', async () => {
+test('accepts dot-prefixed numeric location commands when dot is the configured prefix', async () => {
   const reply = await executeCommand('.33', {
-    commandPrefix: '!',
+    commandPrefix: '.',
     http: {
       async get() {
         return {
@@ -67,12 +67,50 @@ test('accepts dot-prefixed numeric location commands', async () => {
   assert.equal(reply.point.code, '33');
 });
 
-test('accepts slash-prefixed commands as an alias for dot commands', async () => {
+test('strictly follows the configured command prefix for numeric location commands', async () => {
+  const http = {
+    async get() {
+      return {
+        data: {
+          success: true,
+          data: [
+            {
+              code: 'R1',
+              name: 'Route 1',
+              shift: 'AM',
+              deliveryPoints: [
+                {
+                  code: '33',
+                  name: 'Stop 33',
+                },
+              ],
+            },
+          ],
+        },
+      };
+    },
+  };
+
+  const customReply = await executeCommand('/33', { commandPrefix: '/', http });
+  const otherPrefixReply = await executeCommand('.33', { commandPrefix: '/', http });
+
+  assert.equal(customReply.type, 'location');
+  assert.equal(customReply.point.code, '33');
+  assert.equal(otherPrefixReply, null);
+});
+
+test('strictly follows the configured command prefix for regular commands', async () => {
   const reply = await executeCommand('/ping', {
-    commandPrefix: '.',
+    commandPrefix: '/',
   });
 
   assert.equal(reply, 'Bot aktif.');
+
+  const otherPrefixReply = await executeCommand('.ping', {
+    commandPrefix: '/',
+  });
+
+  assert.equal(otherPrefixReply, null);
 });
 
 test('builds tts audio payload', () => {
@@ -231,7 +269,7 @@ test('contact command resolves matching people and returns contact selection but
   process.env.BOT_CONTACTS_FILE = tempContactsPath;
 
   try {
-    const reply = await executeCommand('/caisyah', { commandPrefix: '.' });
+    const reply = await executeCommand('.caisyah', { commandPrefix: '.' });
 
     assert.equal(reply.type, 'contact-search');
     assert.equal(reply.matches.length, 2);

@@ -2591,7 +2591,6 @@ function normalizeCommandText(rawText, commandPrefix = '.') {
 
   const normalizedPrefix = String(commandPrefix || '.').trim() || '.';
   if (trimmed.startsWith(normalizedPrefix)) return trimmed;
-  if (trimmed.startsWith('/')) return `${normalizedPrefix}${trimmed.slice(1)}`;
 
   return trimmed;
 }
@@ -2611,8 +2610,8 @@ export async function executeCommand(text, runtime, message = null) {
     ? runtime.downloadQuotedMediaBuffer
     : downloadQuotedMediaBuffer;
 
-  if (/^\.[0-9]+$/.test(normalizedRaw)) {
-    const locationCode = normalizedRaw.slice(1);
+  if (normalizedRaw.startsWith(commandPrefix) && /^\d+$/.test(normalizedRaw.slice(commandPrefix.length).trim())) {
+    const locationCode = normalizedRaw.slice(commandPrefix.length).trim();
     try {
       const routes = await fetchRoutes(http);
       const foundLocation = findLocationByCode(routes, locationCode);
@@ -2626,7 +2625,7 @@ export async function executeCommand(text, runtime, message = null) {
 
       return `Lokasi tidak dijumpai untuk: ${locationCode}`;
     } catch (error) {
-      console.warn('Failed to resolve dot location command:', error);
+      console.warn('Failed to resolve numeric location command:', error);
     }
   }
 
